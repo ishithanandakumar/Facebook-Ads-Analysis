@@ -1,0 +1,345 @@
+---
+title: "Facebook Ad-Sales Analysis"
+author: "Ishitha Nanda Kumar"
+date: "2024-04-18"
+output: pdf_document
+---
+
+```{r}
+library(tinytex)
+```
+
+```{r}
+getwd()
+```
+# I. Uploading the data
+
+```{r}
+facebook.data = read.csv("facebook.csv")
+View(facebook.data)
+```
+
+# II. Find the dimensions of this data set.
+
+```{r}
+dim(facebook.data)
+```
+There are 1143 rows and 11 columns in the dataset.
+
+# III. Summarize the data and showcase the structure of this dataset.
+
+```{r}
+# Summarizing the data
+
+summary(facebook.data)
+```
+
+
+```{r}
+# #Understanding the structure of the dataset
+
+str(facebook.data)
+```
+
+
+```{r}
+# Converting the 'chr' datatype into factor
+
+facebook.data$age = factor(facebook.data$age)
+facebook.data$gender = factor(facebook.data$gender)
+
+
+# Checking for the structure again
+
+str(facebook.data)
+```
+
+```{r}
+# Visualizing the approved conversion through histogram
+
+hist(facebook.data$Approved_Conversion, breaks=10)
+```
+
+
+# IV. Remove the ID columns
+
+```{r}
+# Removing the ID Column and putting that entire dataset into a new data frame which is 'facebook.df'.
+
+facebook.df = facebook.data[,-1:-3]
+
+```
+
+# V. Create a new column to indicate if the approved conversion is low, average, or high (if 
+# approved conversion<= 2 consider it as “low”, if approved conversion<10 consider it as 
+# average, otherwise consider it as high)
+
+
+```{r}
+
+facebook.df$Approved_Conversion_Category = ifelse(facebook.df$Approved_Conversion <= 2, "Low",
+                                                  ifelse(facebook.df$Approved_Conversion < 10, "Average", "High"))
+
+#Converting Approved_Conversion_Category to factor
+
+facebook.df$Approved_Conversion_Category = factor(facebook.df$Approved_Conversion_Category)
+
+facebook.final.df = facebook.df[,c(1:6,9)]
+
+str(facebook.final.df)
+
+```
+
+
+# GOAL: To determine which features make a ‘low’, ‘average’, and 'high' conversion!
+
+
+# Splitting the data into training and test set
+
+```{r}
+set.seed(04625)
+train.prop = 0.80
+train.cases = sample(nrow(facebook.final.df), nrow(facebook.final.df)*train.prop)
+facebook.df.train = facebook.final.df[train.cases,]
+facebook.df.test = facebook.final.df[-train.cases,]
+
+#Dimension of training set
+dim(facebook.df.train)
+```
+```{r}
+#Dimension of testing set
+dim(facebook.df.test)
+```
+NAIVE BAYES
+
+We then train a naive bayes classifier to predict Segment membership from all other variables in the training data.
+
+```{r}
+install.packages("e1071")
+```
+
+
+
+```{r}
+library(e1071)
+
+(facebook.df.nb = naiveBayes(Approved_Conversion_Category ~., data = facebook.df.train, sampsize = c(9,9)))
+```
+
+
+```{r}
+(facebook.nb.class = predict(facebook.df.nb, facebook.df.test))
+```
+
+# We examine the frequencies of predicted membership using table() & prop.table():
+
+```{r}
+prop.table(table(facebook.nb.class))
+```
+-> 10.91% of the test data belong to 'Average'
+-> 0% of the test data belong to 'High'
+-> 88.20% of the test data belong to 'Low'
+
+
+We can also visaulize the result:
+
+```{r}
+library(cluster)
+
+clusplot(facebook.df.test[,-8], facebook.nb.class, color = TRUE, shade = TRUE,
+         labels = 4, lines = 0,
+         main = "Naive Bayes Classifier")
+
+```
+```{r}
+# How well did we predicted in the test data?
+mean(facebook.df.test$Approved_Conversion_Category == facebook.nb.class)
+```
+We see the raw agreement rate, which is 90.8% agreement between predicted and actual segment membership. 
+So, according to the above output, there is 90.8% agreement between the actual segment that we have and the predicted one. 
+
+One should assess the performance above chance. So basically, if one group is very large, we cannot say that the model is good just because its mostly predicts that group. 
+
+```{r}
+install.packages("mclust")
+```
+
+```{r}
+mean(facebook.nb.class == facebook.df.test$Approved_Conversion_Category)
+```
+
+```{r}
+library(mclust)
+```
+
+```{r}
+adjustedRandIndex(facebook.nb.class, facebook.df.test$Approved_Conversion_Category)
+```
+ARI = 0.4963
+This value suggests a moderate level of agreement between the predicted clusters (or labels) and the true clusters (or labels).
+A value of 0.49 indicates that the predicted labels match the true labels better than expected by random chance alone.
+
+
+```{r}
+#Confusion matrix
+
+table(facebook.nb.class, facebook.df.test$Approved_Conversion_Category)
+```
+-> 'Average': 92% of the Average is predicted correctly
+-> 'High': 0% of the High is predicted correctly.
+-> 'Low': 93.7% of the low is predicted correclty.
+
+
+
+
+```{r}
+group.summary = function(data,groups) {
+  aggregate(data,list(groups),function(x)mean(as.numeric(x)))
+}
+
+
+#Summary data for the proposed segment in the test data
+group1 = group.summary(facebook.df.test,facebook.nb.class)
+group1
+```
+
+```{r}
+#Summary data for the actual segment in the test data
+group2 = group.summary(facebook.df.test, facebook.df.test$Approved_Conversion_Category)
+group2
+```
+
+# RANDOM FOREST
+
+
+```{r}
+install.packages("randomForest")
+```
+
+
+```{r}
+library(randomForest)
+```
+
+
+```{r}
+
+set.seed(98040)
+
+(facebook.df.rf = randomForest(Approved_Conversion_Category ~., 
+                               data = facebook.df.train))
+```
+
+
+
+```{r}
+(facebook.rf.class = predict(facebook.df.rf, facebook.df.test))
+
+```
+```{r}
+summary(facebook.df.test)
+```
+
+
+```{r}
+#Confusion Matrix
+
+table(facebook.rf.class, facebook.df.test$Approved_Conversion_Category)
+```
+-> 'Low': It is accurately predicitng Low group by 98.5%. 
+-> 'Average': It is accurately predicting Average group by 36%%
+-> 'High': It is predicitng high group by 0%. 
+
+```{r}
+summary(facebook.df.test)
+```
+
+
+```{r}
+#How well it is predicting?
+mean(facebook.df.test$Approved_Conversion_Category==facebook.rf.class)
+```
+We see the raw agreement rate, which is 93.01% agreement between predicted and actual segment membership. 
+So, according to the above output, there is 93.01% agreement between the actual segment that we have and the predicted one. 
+
+```{r}
+#ARI
+adjustedRandIndex(facebook.rf.class, facebook.df.test$Approved_Conversion_Category)
+```
+The ARI of 49.6% indicates that the clustering or labeling of data points shows some degree of similarity beyond what would be expected by random chance.
+
+```{r}
+clusplot(facebook.df.test[,-8], facebook.rf.class, color = TRUE, shade = TRUE,
+         labels = 4, lines = 0,
+         main = "Random Forest Classifier")
+```
+
+
+```{r}
+#Summary data for the proposed segment in the test data for random forest
+group3 = group.summary(facebook.df.test,facebook.rf.class)
+group3
+```
+```{r}
+#Summary data for the actual segment in the test data for random forest
+group4 = group.summary(facebook.df.test,facebook.df.test$Approved_Conversion_Category)
+group4
+```
+
+
+We observed that Random forest model gave us more accurate results than NaiveBayes model. Hence, we will go select random forest as our appropriate model. 
+
+
+## Random Forest Variable Importance
+
+```{r}
+set.seed(98040)
+facebook.rf = randomForest(Approved_Conversion_Category~.,data = facebook.df.train,
+                           ntree = 5000,
+                           importance=TRUE)
+
+
+importance(facebook.rf)
+```
+
+
+```{r}
+varImpPlot(facebook.rf, main = "Variable Importance by Segment")
+```
+
+```{r}
+
+library(gplots)
+library(RColorBrewer)
+
+# Extract variable importance from the random forest model
+var_importance <- importance(facebook.rf)
+
+# Transpose the variable importance matrix for heatmap visualization
+var_importance <- t(var_importance)
+
+# Define color palette for heatmap
+colors <- brewer.pal(9, "Blues")  # Choose a suitable color palette
+# Alternatively, you can use other palettes like 'viridis', 'RdYlBu', etc.
+
+# Plot heatmap using heatmap.2 function
+heatmap.2(var_importance[1:3,],
+          col = colors,
+          dend = "none", trace = "none", key = FALSE,
+          margins = c(10,10),
+          main = "/n/ Variable importance by Segment"
+)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
